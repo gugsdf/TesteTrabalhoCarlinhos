@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <title>Docker Compose</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: black;
+      font-family: 'Press Start 2P', monospace;
+    }
+
+    /* =========================================================
+       SCANLINES — sobrepõe tudo
+    ========================================================= */
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,.025),
+        rgba(255,255,255,.025) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+    }
+
+    /* =========================================================
+       FLASH OVERLAY — usado na transição RE4
+    ========================================================= */
+    .flash-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      background: white;
+    }
+
+    .flash-overlay.active {
+      animation: flashAnim 1.1s ease-out forwards;
+    }
+
+    @keyframes flashAnim {
+      0%   { opacity: 1; }
+      65%  { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    /* =========================================================
+       TELA 1 — INTRO (portaInicio.png + diálogo estilo RPG)
+    ========================================================= */
+    #introScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding-bottom: 40px;
+
+      background: url('portaInicio.png') center center / cover no-repeat;
+      image-rendering: pixelated;
+
+      transition: transform 1.2s cubic-bezier(0.4,0,0.2,1),
+                  filter 0.9s ease,
+                  opacity 0.4s ease;
+    }
+
+    #introScreen.zoom-in {
+      transform: scale(1.45);
+      filter: brightness(2.2);
+    }
+
+    #introScreen.hidden {
+      display: none;
+    }
+
+    /* escurecimento leve sobre a imagem */
+    #introScreen::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      pointer-events: none;
+    }
+
+    /* caixa de diálogo estilo RPG pixel */
+    .dialogue-box {
+      position: relative;
+      z-index: 2;
+      width: 820px;
+      max-width: 92%;
+      margin: 0 auto;
+      background: rgba(0,0,0,.92);
+      border: 4px solid #fff;
+      box-shadow:
+        0 0 0 2px #000,
+        0 0 30px rgba(180,120,255,.35);
+      padding: 28px 32px;
+      display: flex;
+      gap: 28px;
+      align-items: flex-start;
+
+      opacity: 0;
+      transform: translateY(30px);
+      transition: opacity .5s ease, transform .5s ease;
+    }
+
+    .dialogue-box.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* retrato da baleia */
+    .portrait {
+      width: 130px;
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .portrait img {
+      width: 100%;
+      image-rendering: pixelated;
+      animation: float 2.2s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(-6px); }
+    }
+
+    /* texto do diálogo */
+    .dialogue-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* prompt de nome */
+    #namePrompt {
+      display: none;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .name-input {
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: 2px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.04);
+      color: #f0eaff;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      outline: none;
+      width: 260px;
+    }
+
+    .name-submit {
+      padding: 10px 14px;
+      border: 2px solid #a87eff;
+      background: rgba(168,126,255,.08);
+      color: #a87eff;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .dialogue-name {
+      color: #a87eff;
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-shadow: 0 0 10px rgba(168,126,255,.6);
+    }
+
+    .dialogue-text {
+      color: #f0eaff;
+      font-size: 13px;
+      line-height: 2;
+      min-height: 52px;
+    }
+
+    /* cursor piscante no fim do texto */
+    .dialogue-cursor {
+      display: inline-block;
+      width: 10px;
+      height: 14px;
+      background: #f0eaff;
+      margin-left: 3px;
+      vertical-align: middle;
+      animation: blink .7s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0; }
+    }
+
+    /* botões Sim / Não */
+    .dialogue-actions {
+      display: flex;
+      gap: 20px;
+      margin-top: 6px;
+    }
+
+    .door-button {
+      padding: 12px 28px;
+      border: 3px solid #fff;
+      background: rgba(0,0,0,.8);
+      color: #fff;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+      letter-spacing: 2px;
+    }
+
+    .door-button:hover {
+      background: rgba(255,255,255,.12);
+      transform: translateY(-2px);
+    }
+
+    .door-button:active {
+      transform: translateY(1px);
+    }
+
+    .door-button.confirm {
+      border-color: #a87eff;
+      color: #a87eff;
+      box-shadow: 0 0 12px rgba(168,126,255,.4);
+    }
+
+    .door-button.confirm:hover {
+      background: rgba(168,126,255,.15);
+    }
+
+    /* seta "pressione Enter" */
+    .dialogue-hint {
+      align-self: flex-end;
+      font-size: 9px;
+      color: rgba(255,255,255,.4);
+      letter-spacing: 1px;
+      animation: bob .9s ease-in-out infinite;
+    }
+
+    @keyframes bob {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(4px); }
+    }
+
+    /* =========================================================
+       TELA 2 — MENU PRINCIPAL (vídeo + título + botão START)
+    ========================================================= */
+    #mainScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+    }
+
+    #mainScreen.visible {
+      display: block;
+    }
+
+    /* vídeo de fundo */
+    #mainVideo {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    /* overlay escuro sobre o vídeo */
+    .main-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,.4);
+      z-index: 1;
+    }
+
+    .main-overlay.active {
+      animation: darken .6s ease-out forwards;
+    }
+
+    @keyframes darken {
+      to { background: rgba(0,0,0,.85); }
+    }
+
+    /* conteúdo central */
+    .main-content {
+      position: relative;
+      z-index: 3;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding-top: 120px;
+      animation: fadeUp .8s ease-out;
+    }
+
+    .main-content.active {
+      animation: zoomOut .7s cubic-bezier(.25,.46,.45,.94) forwards;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes zoomOut {
+      0%   { transform: scale(1);   opacity: 1; }
+      50%  { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+
+    /* caixa do título */
+    .title-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 50px;
+      margin-bottom: 42px;
+      background: rgba(10,8,18,.6);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 22px;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 20px 55px rgba(0,0,0,.4);
+    }
+
+    .title-box h1 {
+      color: white;
+      font-size: 96px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      line-height: 1;
+      font-family: 'Arial Black', Arial, sans-serif;
+      text-shadow:
+        0 0 18px rgba(255,255,255,.7),
+        0 0 30px rgba(157,95,255,.35);
+    }
+
+    .title-box h2 {
+      color: #c08bff;
+      font-size: 26px;
+      font-weight: 800;
+      margin-top: 10px;
+      letter-spacing: 7px;
+      text-shadow: 0 0 12px rgba(157,95,255,.7);
+      font-family: Arial, sans-serif;
+    }
+
+    .title-box h2::before { content: '·· '; color: #7a3fcc; }
+    .title-box h2::after  { content: ' ··'; color: #7a3fcc; }
+
+    /* botão START */
+    .start-btn {
+      width: 360px;
+      height: 96px;
+      border: 5px solid #361f83;
+      border-radius: 18px;
+      font-size: 34px;
+      font-weight: 900;
+      color: white;
+      font-family: 'Arial Black', Arial, sans-serif;
+      background: linear-gradient(180deg, #8f4dff 0%, #5a26b8 36%, #2b0f58 100%);
+      cursor: pointer;
+      letter-spacing: 3px;
+      text-shadow: 0 3px 5px rgba(0,0,0,.55);
+      box-shadow:
+        0 14px 0 #190639,
+        0 24px 42px rgba(0,0,0,.45),
+        inset 0 2px 3px rgba(255,255,255,.16),
+        inset 0 -10px 28px rgba(0,0,0,.45);
+      transition: transform .16s ease, box-shadow .16s ease, filter .16s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .start-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0) 40%);
+      pointer-events: none;
+    }
+
+    .start-btn:hover {
+      transform: translateY(-3px);
+      filter: brightness(1.12);
+      box-shadow:
+        0 18px 0 #190639,
+        0 32px 45px rgba(0,0,0,.55),
+        inset 0 3px 4px rgba(255,255,255,.2);
+    }
+
+    .start-btn:active {
+      transform: translateY(2px);
+      box-shadow:
+        0 8px 0 #190639,
+        0 14px 22px rgba(0,0,0,.28),
+        inset 0 1px 2px rgba(255,255,255,.1);
+    }
+
+    /* vídeos de transição (bubbles etc) */
+    #bubbleVideo {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 50;
+      display: none;
+    }
+
+    /* overlay de "câmera" que desce mostrando a imagem de fundo inicial */
+    .camera-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      pointer-events: none;
+      background: url('fundoInicial.png') center center / cover no-repeat;
+      transform: translateY(-100%);
+      opacity: 0;
+      transition: transform 1.1s cubic-bezier(.22,.9,.28,1), opacity 1.1s ease;
+    }
+
+    .camera-overlay.active {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* peixes animados sobre o fundo inicial */
+    #peixesFases {
+      position: fixed;
+      inset: 0;
+      z-index: 61;
+      pointer-events: none;
+      display: none;
+    }
+
+    #peixesFases.visible {
+      display: block;
+    }
+
+    #peixesFases > div {
+      position: absolute;
+      width: 150px;
+      height: 120px;
+      background-size: contain;
+      background-repeat: no-repeat;
+      transform-origin: center;
+    }
+
+    @keyframes peixeBob {
+      0%   { transform: translateY(0) rotate(-2deg); }
+      50%  { transform: translateY(-18px) rotate(2deg); }
+      100% { transform: translateY(0) rotate(-2deg); }
+    }
+
+    /* posições e imagens individuais */
+    #peixesFases > div:nth-child(1) {
+      left: 6%;  top: 20%;
+      background-image: url("edu.png");
+      animation: peixeBob 3.6s ease-in-out infinite;
+    }
+
+    #peixesFases > div:nth-child(2) {
+      width: 180px;
+      height: 150px;
+      left: 14%; top: 66%; transform: scale(.9);
+      background-image: url("felipe.png");
+      animation: peixeBob 4.4s ease-in-out infinite .2s;
+    }
+
+    #peixesFases > div:nth-child(3) {
+      left: 30%; top: 20%; transform: scale(.85) rotateY(180deg);
+      background-image: url("arakaki.png");
+      animation: peixeBob 3.2s ease-in-out infinite .5s;
+    }
+
+    #peixesFases > div:nth-child(4) {
+      left: 39%; top: 66%; transform: scale(.95);
+      background-image: url("igor.png");
+      animation: peixeBob 4.8s ease-in-out infinite .1s;
+    }
+
+    #peixesFases > div:nth-child(5) {
+      width: 130px;
+      height: 110px;
+      left: 50%; top: 20%; transform: scale(.8) rotateY(180deg);
+      background-image: url("gustavo.png");
+      animation: peixeBob 3.8s ease-in-out infinite .35s;
+    }
+
+    #peixesFases > div:nth-child(6) {
+      left: 66%; top: 66%; transform: scale(.95) rotateY(180deg);
+      background-image: url("Rafa.png");
+      animation: peixeBob 4.2s ease-in-out infinite .6s;
+    }
+
+    @media (max-width: 768px) {
+      .title-box h1  { font-size: 56px; }
+      .title-box h2  { font-size: 20px; }
+      .start-btn     { width: 260px; height: 72px; font-size: 24px; }
+      .main-content  { padding-top: 80px; }
+      .dialogue-box  { flex-direction: column; align-items: center; }
+      .portrait      { width: 90px; }
+      .dialogue-text { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="peixesFases">
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+    <div></div>
+  </div>
+  <!-- scanlines sobre tudo -->
+  <div class="scanlines"></div>
+
+  <!-- flash branco RE4 -->
+  <div class="flash-overlay" id="flashOverlay"></div>
+
+  <!-- =====================================================
+       TELA 1: INTRO COM PORTA
+  ===================================================== -->
+  <div id="introScreen">
+
+    <div class="dialogue-box" id="dialogueBox">
+
+      <!-- retrato baleia -->
+      <div class="portrait">
+        <img src="dockerBaleia-removebg-preview.png" alt="Docker Whale">
+      </div>
+
+      <!-- corpo do diálogo -->
+      <div class="dialogue-body">
+        <div class="dialogue-name">Docker</div>
+        <div id="namePrompt">
+          <input id="nameInput" class="name-input" type="text" maxlength="20" placeholder="Digite seu nome">
+          <button id="nameSubmit" class="name-submit">OK</button>
+        </div>
+        <div class="dialogue-text" id="dialogueText">
+          <span id="dialogueContent"></span><span class="dialogue-cursor" id="dialogueCursor"></span>
+        </div>
+
+        <!-- botões aparecem só no último diálogo -->
+        <div class="dialogue-actions" id="dialogueActions" style="display:none">
+          <button class="door-button confirm" id="doorYes">▶ Sim</button>
+          <button class="door-button cancel"  id="doorNo" >✕ Não</button>
+        </div>
+
+        <div class="dialogue-hint" id="dialogueHint">▼ ENTER para continuar</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =====================================================
+       TELA 2: MENU PRINCIPAL
+  ===================================================== -->
+  <div id="mainScreen">
+
+    <video id="mainVideo" muted loop playsinline preload="auto">
+      <source src="background.mp4" type="video/mp4">
+    </video>
+
+    <div class="main-overlay" id="mainOverlay"></div>
+
+    <div class="main-content" id="mainContent">
+      <div class="title-box">
+        <h1>Docker</h1>
+        <h2>Compose</h2>
+      </div>
+      <button class="start-btn" id="startBtn">▶ START</button>
+    </div>
+
+  </div>
+
+  <!-- vídeo de bolhas após o START -->
+  <video id="bubbleVideo" playsinline>
+    <source src="BolhasPassando.mp4" type="video/mp4">
+  </video>
+
+  <!-- overlay de câmera que desce mostrando a imagem de fundo inicial -->
+  <div id="cameraOverlay" class="camera-overlay"></div>
+
+  <!-- música de fundo -->
+  <audio id="musicaFundo" preload="auto" loop>
+    <source src="MusicabackgroundInfinite.mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- som de digitação -->
+  <audio id="talkSound" preload="auto">
+    <source src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3">
+  </audio>
+
+  <script>
+    /* =====================================================
+       ELEMENTOS
+    ===================================================== */
+    const introScreen     = document.getElementById('introScreen');
+    const dialogueBox     = document.getElementById('dialogueBox');
+    const dialogueContent = document.getElementById('dialogueContent');
+    const dialogueCursor  = document.getElementById('dialogueCursor');
+    const dialogueActions = document.getElementById('dialogueActions');
+    const dialogueHint    = document.getElementById('dialogueHint');
+    const doorYes         = document.getElementById('doorYes');
+    const doorNo          = document.getElementById('doorNo');
+    const flashOverlay    = document.getElementById('flashOverlay');
+
+    const mainScreen      = document.getElementById('mainScreen');
+    const mainVideo       = document.getElementById('mainVideo');
+    const mainOverlay     = document.getElementById('mainOverlay');
+    const mainContent     = document.getElementById('mainContent');
+    const startBtn        = document.getElementById('startBtn');
+    const bubbleVideo     = document.getElementById('bubbleVideo');
+    const musicaFundo     = document.getElementById('musicaFundo');
+    const talkSound       = document.getElementById('talkSound');
+    const namePrompt      = document.getElementById('namePrompt');
+    const nameInput       = document.getElementById('nameInput');
+    const nameSubmit      = document.getElementById('nameSubmit');
+    const cameraOverlay   = document.getElementById('cameraOverlay');
+    const peixesFases      = document.getElementById('peixesFases');
+
+    /* =====================================================
+       DIÁLOGOS (agora com prompt de nome e templates)
+    ===================================================== */
+    const dialoguesTemplate = [
+      "* Olá, {name}. ...Então você chegou até aqui.",
+      "* Esta porta guarda um mundo inteiro\nde containers e serviços.",
+      "* Você deseja abrir a porta?"
+    ];
+
+    let dialogues = [];
+    let dialogueIndex = 0;
+    let isTyping = false;
+    let typingInterval = null;
+    let currentFullText = '';
+
+    function initDialogues(name) {
+      const safeName = name && name.trim() ? name.trim() : 'visitante';
+      dialogues = dialoguesTemplate.map(t => t.replace('{name}', safeName));
+      dialogueIndex = 0;
+    }
+
+    function typeText(text, onDone) {
+      isTyping = true;
+      dialogueContent.textContent = '';
+      dialogueCursor.style.display = 'inline-block';
+      currentFullText = text;
+      let i = 0;
+
+      typingInterval = setInterval(() => {
+        dialogueContent.textContent += text[i];
+        // som de digitação leve
+        talkSound.currentTime = 0;
+        talkSound.volume = 0.06;
+        talkSound.play().catch(() => {});
+        i++;
+        if (i >= text.length) {
+          clearInterval(typingInterval);
+          isTyping = false;
+          if (onDone) onDone();
+        }
+      }, 32);
+    }
+
+    function skipTyping() {
+      if (!isTyping) return;
+      clearInterval(typingInterval);
+      dialogueContent.textContent = currentFullText;
+      isTyping = false;
+      checkLastDialogue();
+    }
+
+    function checkLastDialogue() {
+      if (dialogueIndex === dialogues.length - 1) {
+        // último diálogo: mostrar botões
+        dialogueActions.style.display = 'flex';
+        dialogueHint.style.display = 'none';
+        dialogueCursor.style.display = 'none';
+      }
+    }
+
+    function nextDialogue() {
+      if (isTyping) { skipTyping(); return; }
+
+      dialogueIndex++;
+      if (dialogueIndex < dialogues.length) {
+        typeText(dialogues[dialogueIndex], checkLastDialogue);
+      }
+    }
+
+    function showNamePrompt() {
+      namePrompt.style.display = 'flex';
+      document.getElementById('dialogueText').style.display = 'none';
+      dialogueHint.style.display = 'none';
+      nameInput.focus();
+    }
+
+    function hideNamePrompt() {
+      namePrompt.style.display = 'none';
+      document.getElementById('dialogueText').style.display = 'block';
+      dialogueHint.style.display = 'block';
+    }
+
+    function startIntroWithName(name) {
+      localStorage.setItem('playerName', name);
+      initDialogues(name);
+      hideNamePrompt();
+      setTimeout(() => {
+        dialogueBox.classList.add('visible');
+        typeText(dialogues[0], checkLastDialogue);
+      }, 200);
+    }
+
+    /* iniciar primeiro diálogo após pequeno delay */
+    window.addEventListener('DOMContentLoaded', () => {
+      const stored = localStorage.getItem('playerName');
+      setTimeout(() => {
+        if (stored) {
+          initDialogues(stored);
+          dialogueBox.classList.add('visible');
+          typeText(dialogues[0], checkLastDialogue);
+        } else {
+          // mostrar a caixa e pedir o nome antes de começar
+          dialogueBox.classList.add('visible');
+          showNamePrompt();
+        }
+      }, 800);
+
+      // Enter avança o diálogo (mas não durante o prompt de nome)
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        if (namePrompt.style.display === 'flex') return; // Enter no prompt trata o próprio input
+        if (dialogueActions.style.display === 'flex') return; // no Enter quando mostrando botões
+        nextDialogue();
+      });
+
+      // Clique na caixa também avança
+      dialogueBox.addEventListener('click', () => {
+        if (namePrompt.style.display === 'flex') return;
+        if (dialogueActions.style.display === 'flex') return;
+        nextDialogue();
+      });
+
+      // enviar nome
+      nameSubmit.addEventListener('click', () => {
+        const n = nameInput.value.trim();
+        if (!n) return;
+        startIntroWithName(n);
+      });
+
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          nameSubmit.click();
+        }
+      });
+    });
+
+    /* =====================================================
+       BOTÃO NÃO
+    ===================================================== */
+    doorNo.addEventListener('click', () => {
+      dialogueContent.textContent = '* Você precisa abrir a porta\npara continuar...';
+    });
+
+    /* =====================================================
+       BOTÃO SIM — animação estilo RE4
+    ===================================================== */
+    doorYes.addEventListener('click', () => {
+      doorYes.disabled = true;
+      doorNo.disabled  = true;
+
+      // 1. zoom na porta (câmera avança)
+      introScreen.classList.add('zoom-in');
+
+      // 2. flash branco após o zoom começar
+      setTimeout(() => {
+        flashOverlay.style.opacity = '0';
+        flashOverlay.style.transition = 'none';
+        void flashOverlay.offsetWidth; // reflow
+        flashOverlay.classList.add('active');
+        introScreen.classList.add('hidden');
+        flashOverlay.style.opacity = '0';
+
+        mainScreen.classList.add('visible');
+        mainVideo.play().catch(() => {});
+        iniciarMusica();
+      },1050);
+
+    });
+
+    /* =====================================================
+       MÚSICA
+    ===================================================== */
+    function iniciarMusica() {
+      musicaFundo.volume = 0.2;
+      musicaFundo.play().catch(() => {});
+    }
+
+    /* =====================================================
+       BOTÃO START — efeito zoom + bolhas
+    ===================================================== */
+    function playClickSound() {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = ctx.currentTime;
+
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(200, now);
+      osc.frequency.exponentialRampToValueAtTime(800, now + .15);
+      gain.gain.setValueAtTime(.3, now);
+      gain.gain.exponentialRampToValueAtTime(.01, now + .15);
+      osc.start(now); osc.stop(now + .15);
+
+      const osc2  = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2); gain2.connect(ctx.destination);
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(600, now + .08);
+      osc2.frequency.exponentialRampToValueAtTime(1200, now + .18);
+      gain2.gain.setValueAtTime(.2, now + .08);
+      gain2.gain.exponentialRampToValueAtTime(.01, now + .18);
+      osc2.start(now + .08); osc2.stop(now + .18);
+    }
+
+    startBtn.addEventListener('click', () => {
+      if (musicaFundo.paused) musicaFundo.play();
+
+      mainVideo.pause();
+      playClickSound();
+
+      mainContent.classList.add('active');
+      mainOverlay.classList.add('active');
+      startBtn.disabled = true;
+      startBtn.style.pointerEvents = 'none';
+
+      setTimeout(() => {
+        bubbleVideo.style.display = 'block';
+        bubbleVideo.play().catch(() => {});
+      }, 700);
+    });
+
+    // após as bolhas aparecerem, descer a "câmera" e mostrar o fundo inicial
+    bubbleVideo.addEventListener('playing', () => {
+      // aguarda um pouco para as bolhas começarem a aparecer
+      setTimeout(() => {
+        cameraOverlay.classList.add('active');
+         // mostrar peixinhos quando a câmera descer
+         if (peixesFases) peixesFases.classList.add('visible');
+      }, 1400);
+    }, { once: true });
+  </script>
+</body>
+</html>
