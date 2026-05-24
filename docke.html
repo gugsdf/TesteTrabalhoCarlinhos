@@ -1150,7 +1150,8 @@
 
     .book-page-number {
       margin: 0 0 16px;
-      font-size: clamp(18px, 2vw, 28px);
+      font-size: clamp(16px, 1.55vw, 23px);
+      line-height: 1.12;
       font-weight: 900;
       letter-spacing: 1px;
       text-transform: uppercase;
@@ -1172,6 +1173,15 @@
       text-shadow: 0 1px 0 rgba(255, 235, 185, .55);
     }
 
+    .book-slide-image {
+      width: 100%;
+      max-height: 185px;
+      margin-top: 18px;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(45, 25, 10, .28);
+    }
+
     .book-slide-text {
       margin: 6px 0 0;
       font-size: clamp(12px, 1.05vw, 17px);
@@ -1188,6 +1198,23 @@
 
     .book-slide-text li {
       margin-bottom: 9px;
+    }
+
+    .book-slide-code {
+      width: 100%;
+      max-height: 185px;
+      margin: 6px 0 10px;
+      padding: 10px 12px;
+      overflow: auto;
+      border-radius: 8px;
+      background: rgba(62, 36, 15, .14);
+      color: #2b1c10;
+      font-family: Consolas, 'Courier New', monospace;
+      font-size: clamp(9px, .78vw, 12px);
+      line-height: 1.25;
+      white-space: pre-wrap;
+      text-shadow: none;
+      box-shadow: inset 0 0 0 1px rgba(75, 45, 18, .18);
     }
 
     #phaseControls {
@@ -1475,6 +1502,7 @@
         <section class="book-page book-page-left">
           <p id="phaseBookPage" class="book-page-number">PAGINA 1 DE TITULO</p>
           <h2 id="phaseBookTitle" class="book-slide-title">FASE 1</h2>
+          <img id="phaseBookImage" class="book-slide-image" alt="">
         </section>
         <section class="book-page book-page-right">
           <div id="phaseBookText" class="book-slide-text">edu</div>
@@ -1988,6 +2016,7 @@
     const phaseBookContent = document.getElementById('phaseBookContent');
     const phaseBookPage = document.getElementById('phaseBookPage');
     const phaseBookTitle = document.getElementById('phaseBookTitle');
+    const phaseBookImage = document.getElementById('phaseBookImage');
     const phaseBookText = document.getElementById('phaseBookText');
     const phaseBookFlash = document.getElementById('phaseBookFlash');
     const phaseFinishModal = document.getElementById('phaseFinishModal');
@@ -2015,6 +2044,89 @@
     }
 
     const phaseBookSlides = {
+      arakaki: [
+        {
+          title: 'Services, Build e Images',
+          topics: [
+            'O bloco "services" é o coração do docker-compose.yml',
+            'Cada service = um container com configuração própria',
+            'Duas formas de definir a imagem: image usa uma imagem pronta do registry; build constrói a partir de um Dockerfile local'
+          ]
+        },
+        {
+          title: 'Build vs Image',
+          topics: [
+            'image: quando usar dependências como banco, cache e broker. Ex: image: postgres:16',
+            'build: quando usar sua aplicação. Ex: build: ./backend',
+            'Opções úteis do build: context, dockerfile, args e target'
+          ]
+        },
+        {
+          title: 'Exemplo Prático',
+          code: `services:
+  api:
+    build: ./backend
+    ports:
+      - "8080:8080"
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: secret`,
+          topics: [
+            'docker compose build → builda sem subir',
+            'Dica: combine build + image para tagear a imagem gerada'
+          ]
+        }
+      ],
+      gustavo: [
+        {
+          title: 'Variáveis de Ambiente e Arquivos .env',
+          topics: [
+            'O gerenciamento de variáveis é essencial para a segurança e portabilidade',
+            'environment define variáveis diretamente no docker-compose.yml',
+            '.env files armazenam definições e segredos em um arquivo local oculto',
+            'O Docker Compose lê automaticamente um arquivo .env na raiz do projeto',
+            'Dica de segurança: nunca envie o seu arquivo .env para o Git!'
+          ]
+        },
+        {
+          title: 'Controle de Inicialização com Depends On',
+          topics: [
+            'depends_on define a ordem de inicialização dos serviços',
+            'Por padrão, espera o container pai iniciar, não o serviço estar pronto',
+            'condition: service_started → comportamento padrão',
+            'condition: service_healthy → aguarda o Healthcheck passar',
+            'condition: service_completed_successfully → espera um container init finalizar com Exit Code 0'
+          ]
+        },
+        {
+          title: 'Exemplo Prático com Healthcheck',
+          code: `services:
+  api:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: \${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s`,
+          topics: [
+            'A api só tenta subir quando o banco db estiver pronto para receber conexões',
+            'O ${DB_PASSWORD} busca o valor configurado de forma segura no arquivo .env'
+          ]
+        }
+      ],
       igor: [
         {
           title: 'Networking e Volumes no Docker Compose',
@@ -2040,6 +2152,7 @@
         },
         {
           title: 'Exemplo',
+          image: 'assets/ExemploIgor.jpeg',
           topics: [
             'Aplicação e o banco estão conectados pela mesma rede, permitindo comunicação entre eles',
             'O banco utiliza um volume para garantir persistência dos dados',
@@ -2140,15 +2253,33 @@
       const slide = slides[phaseBookPageIndex] || slides[0];
       phaseBookPage.textContent = slide.title;
       phaseBookTitle.textContent = `PAGINA ${phaseBookPageIndex + 1}`;
+      if (slide.image) {
+        phaseBookImage.src = slide.image;
+        phaseBookImage.alt = slide.title;
+        phaseBookImage.style.display = 'block';
+      } else {
+        phaseBookImage.removeAttribute('src');
+        phaseBookImage.alt = '';
+        phaseBookImage.style.display = 'none';
+      }
       phaseBookText.replaceChildren();
 
-      const list = document.createElement('ul');
-      slide.topics.forEach(topic => {
-        const item = document.createElement('li');
-        item.textContent = topic;
-        list.appendChild(item);
-      });
-      phaseBookText.appendChild(list);
+      if (slide.code) {
+        const codeBlock = document.createElement('pre');
+        codeBlock.className = 'book-slide-code';
+        codeBlock.textContent = slide.code;
+        phaseBookText.appendChild(codeBlock);
+      }
+
+      if (slide.topics && slide.topics.length) {
+        const list = document.createElement('ul');
+        slide.topics.forEach(topic => {
+          const item = document.createElement('li');
+          item.textContent = topic;
+          list.appendChild(item);
+        });
+        phaseBookText.appendChild(list);
+      }
 
       if (phaseBackBtn) {
         phaseBackBtn.disabled = false;
